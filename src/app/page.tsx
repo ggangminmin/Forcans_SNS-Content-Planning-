@@ -234,7 +234,7 @@ function ShortsStoryboard({ variant, onGenerateScene, onUploadScene, sceneLoadin
     if (storyboard.length === 0) return;
     setTranslating(true);
     const prompt = `다음 YouTube Shorts 씬들을 영어 영상 제작 프롬프트로 번역해줘. 반드시 아래 JSON 배열 형식으로만 반환해:\n[{"visual":"English visual description","script":"English narration/caption"}]\n\n씬 목록:\n${storyboard.map((s: any, i: number) => `씬${i+1} - 비주얼: ${s.visual} / 나레이션: ${s.script}`).join('\n')}`;
-    fetch('/api/gemini', {
+    fetch('/api/translate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parts: [{ text: prompt }] }),
