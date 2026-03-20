@@ -654,11 +654,11 @@ ${platformGuides(selectedPlatform)}
     const instaL = !!imgLoadingMap[`${activeTab}-${vIdx}-instagram-0`];
 
     const trendRaw = JSON.parse(localStorage.getItem('office_trend_raw') || 'null');
-    const issueMap = new Map((trendRaw?.trending_issues || []).filter((t: any) => t.url).map((t: any) => [t.url, t.title]));
-    const extraCitations = (trendRaw?.citations || []).filter((c: any) => c.url && !issueMap.has(c.url));
+    const issueUrlSet = new Set((trendRaw?.trending_issues || []).filter((t: any) => t.url).map((t: any) => t.url));
+    const extraCitations = (trendRaw?.citations || []).filter((c: any) => c.url && !issueUrlSet.has(c.url));
     const allRefs = [
-      ...(trendRaw?.trending_issues || []).filter((t: any) => t.url).map((t: any) => ({ url: t.url, title: t.title })),
-      ...extraCitations.map((c: any) => ({ url: c.url, title: c.title || c.url })),
+      ...(trendRaw?.trending_issues || []).map((t: any) => ({ url: t.url || null, title: t.title, source: t.source || '' })),
+      ...extraCitations.map((c: any) => ({ url: c.url, title: c.title || c.url, source: '' })),
     ];
 
     return (
@@ -691,7 +691,7 @@ ${platformGuides(selectedPlatform)}
                 분석에 사용한 참고 자료
               </h3>
               <div className="space-y-3">
-                {allRefs.map((item: any, i: number) => (
+                {allRefs.map((item: any, i: number) => item.url ? (
                   <a key={i} href={item.url} target="_blank" rel="noopener noreferrer"
                     className="bg-white rounded-2xl p-4 border border-blue-100/60 flex items-center gap-4 hover:border-blue-300 hover:shadow-sm transition-all group block">
                     <div className="w-8 h-8 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0 text-blue-600 font-black text-sm group-hover:bg-blue-500 group-hover:text-white transition-colors">{i + 1}</div>
@@ -701,6 +701,14 @@ ${platformGuides(selectedPlatform)}
                     </div>
                     <span className="text-blue-400 text-xs font-bold flex-shrink-0 group-hover:text-blue-600">열기</span>
                   </a>
+                ) : (
+                  <div key={i} className="bg-white rounded-2xl p-4 border border-blue-100/60 flex items-center gap-4">
+                    <div className="w-8 h-8 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-400 font-black text-sm">{i + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-gray-900 text-sm mb-0.5 truncate">{item.title}</div>
+                      {item.source && <div className="text-gray-400 text-xs truncate">{item.source}</div>}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -802,12 +810,11 @@ ${platformGuides(selectedPlatform)}
             </div>
 
             {(() => {
-              // trending_issues URL + citations URL 합쳐서 중복 제거
-              const issueMap = new Map((trendRaw?.trending_issues || []).filter((t: any) => t.url).map((t: any) => [t.url, t.title]));
-              const extraCitations = (trendRaw?.citations || []).filter((c: any) => c.url && !issueMap.has(c.url));
+              const issueUrlSet = new Set((trendRaw?.trending_issues || []).filter((t: any) => t.url).map((t: any) => t.url));
+              const extraCitations = (trendRaw?.citations || []).filter((c: any) => c.url && !issueUrlSet.has(c.url));
               const allRefs = [
-                ...(trendRaw?.trending_issues || []).filter((t: any) => t.url).map((t: any) => ({ url: t.url, title: t.title })),
-                ...extraCitations.map((c: any) => ({ url: c.url, title: c.title || c.url })),
+                ...(trendRaw?.trending_issues || []).map((t: any) => ({ url: t.url || null, title: t.title, source: t.source || '' })),
+                ...extraCitations.map((c: any) => ({ url: c.url, title: c.title || c.url, source: '' })),
               ];
               if (allRefs.length === 0) return null;
               return (
@@ -817,14 +824,9 @@ ${platformGuides(selectedPlatform)}
                     분석에 사용한 참고 자료
                   </h3>
                   <div className="space-y-3">
-                    {allRefs.map((item: any, i: number) => (
-                      <a
-                        key={i}
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="bg-white rounded-2xl p-4 border border-blue-100/60 flex items-center gap-4 hover:border-blue-300 hover:shadow-sm transition-all group block"
-                      >
+                    {allRefs.map((item: any, i: number) => item.url ? (
+                      <a key={i} href={item.url} target="_blank" rel="noopener noreferrer"
+                        className="bg-white rounded-2xl p-4 border border-blue-100/60 flex items-center gap-4 hover:border-blue-300 hover:shadow-sm transition-all group block">
                         <div className="w-8 h-8 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0 text-blue-600 font-black text-sm group-hover:bg-blue-500 group-hover:text-white transition-colors">{i + 1}</div>
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-gray-900 text-sm mb-0.5 truncate group-hover:text-blue-600 transition-colors">{item.title}</div>
@@ -832,6 +834,14 @@ ${platformGuides(selectedPlatform)}
                         </div>
                         <span className="text-blue-400 text-xs font-bold flex-shrink-0 group-hover:text-blue-600">열기</span>
                       </a>
+                    ) : (
+                      <div key={i} className="bg-white rounded-2xl p-4 border border-blue-100/60 flex items-center gap-4">
+                        <div className="w-8 h-8 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-400 font-black text-sm">{i + 1}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-gray-900 text-sm mb-0.5 truncate">{item.title}</div>
+                          {item.source && <div className="text-gray-400 text-xs truncate">{item.source}</div>}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
