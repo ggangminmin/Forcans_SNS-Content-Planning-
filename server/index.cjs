@@ -169,7 +169,7 @@ app.post('/api/trend', async (req, res) => {
 trending_issues는 최소 3개 이상, 실제 최신 뉴스 기반으로 작성. JSON만 반환.`;
 
     const response = await axios.post('https://api.openai.com/v1/responses', {
-      model: 'gpt-5.4-mini',
+      model: 'gpt-4o',
       input: [{ role: 'user', content: prompt }],
       tools: [{ type: 'web_search_preview' }],
       text: { format: { type: 'text' } }
@@ -177,17 +177,35 @@ trending_issues는 최소 3개 이상, 실제 최신 뉴스 기반으로 작성.
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }
     });
 
-    const content = response.data.output
+    const outputText = response.data.output
       ?.find(o => o.type === 'message')
       ?.content
-      ?.find(c => c.type === 'output_text')
-      ?.text || '{}';
+      ?.find(c => c.type === 'output_text');
+
+    const content = outputText?.text || '{}';
+
+    // annotations에서 실제 URL 추출 (중복 제거)
+    const annotations = outputText?.annotations || [];
+    const seen = new Set();
+    const citations = annotations
+      .filter(a => a.type === 'url_citation' && a.url)
+      .filter(a => { if (seen.has(a.url)) return false; seen.add(a.url); return true; })
+      .map(a => ({ url: a.url, title: a.title || '' }));
 
     // JSON 블록 추출 (```json ... ``` 또는 { ... })
     const jsonMatch = content.match(/```json\s*([\s\S]*?)```/) || content.match(/(\{[\s\S]*\})/);
     const trendData = JSON.parse(jsonMatch ? jsonMatch[1] : content);
-    console.log(`[/api/trend] Found ${trendData.trending_issues?.length || 0} issues`);
-    res.json(trendData);
+
+    // trending_issues에 실제 URL 매핑
+    if (trendData.trending_issues) {
+      trendData.trending_issues = trendData.trending_issues.map((issue, i) => ({
+        ...issue,
+        url: issue.url || citations[i]?.url || null,
+      }));
+    }
+
+    console.log(`[/api/trend] Found ${trendData.trending_issues?.length || 0} issues, ${citations.length} citations`);
+    res.json({ ...trendData, citations });
   } catch (err) {
     console.error('[/api/trend] Error:', err.response?.data || err.message);
     res.status(err.response?.status || 500).json({ error: err.message });
