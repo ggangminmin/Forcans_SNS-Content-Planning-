@@ -442,7 +442,7 @@ ${ideas}
 ${trimmedScrape}${trimmedTrend}`;
       const platformGuides = (p: string) => {
         if (p === 'instagram') return `"instagram": [{"content": "1안 내용(600자내외, 감성문구+CTA+해시태그)", "visual": "이미지묘사(한글 1~2문장)"}, {"content": "2안 내용", "visual": "이미지묘사"}, {"content": "3안 내용", "visual": "이미지묘사"}]`;
-        if (p === 'shorts') return `"shorts": [{"content": "영상제목1", "duration": "N초", "storyboard": [{"timeCode": "0:00~0:03", "visual": "장면묘사", "script": "나레이션"}]}, {"content": "영상제목2", "duration": "N초", "storyboard": [{"timeCode": "0:00~0:03", "visual": "장면묘사", "script": "나레이션"}]}, {"content": "영상제목3", "duration": "N초", "storyboard": [{"timeCode": "0:00~0:03", "visual": "장면묘사", "script": "나레이션"}]}]`;
+        if (p === 'shorts') return `반드시 JSON 키 이름은 정확히 "shorts" 사용 (YouTube Shorts 아님):\n"shorts": [{"content": "영상제목1", "duration": "60초", "storyboard": [{"timeCode": "0:00~0:05", "visual": "장면묘사", "script": "나레이션/자막"}, {"timeCode": "0:05~0:15", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:15~0:30", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:30~0:45", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:45~1:00", "visual": "장면묘사", "script": "나레이션/CTA"}]}, {"content": "영상제목2", "duration": "60초", "storyboard": [{"timeCode": "0:00~0:05", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:05~0:20", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:20~0:40", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:40~1:00", "visual": "장면묘사", "script": "나레이션/CTA"}]}, {"content": "영상제목3", "duration": "60초", "storyboard": [{"timeCode": "0:00~0:05", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:05~0:20", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:20~0:40", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:40~1:00", "visual": "장면묘사", "script": "나레이션/CTA"}]}]`;
         if (p === 'blog') return `"blog": [{"content": "1안 블로그글(2200자내외). [섹션1]~[섹션5] 소제목포함. 각 소제목 아래 5~7문장. 소제목마다 해시태그 10개이상.", "visualPrompts": ["섹션1묘사","섹션2","섹션3","섹션4","섹션5"]}, {"content": "2안 블로그글", "visualPrompts": ["섹션1묘사","섹션2","섹션3","섹션4","섹션5"]}, {"content": "3안 블로그글", "visualPrompts": ["섹션1묘사","섹션2","섹션3","섹션4","섹션5"]}]`;
         return `"${p}": [{"content": "1안 내용"}, {"content": "2안 내용"}, {"content": "3안 내용"}]`;
       };
@@ -504,12 +504,25 @@ ${platformGuides(selectedPlatform)}
         throw new Error('GPT returned invalid response. Please try again.');
       }
 
+      const platformKeyAlias: Record<string, string> = {
+        'youtube shorts': 'shorts', 'youtube_shorts': 'shorts', 'youtubeshorts': 'shorts',
+        'x (twitter)': 'twitter', 'x twitter': 'twitter', 'x_twitter': 'twitter',
+        'tik tok': 'tiktok', 'tik_tok': 'tiktok',
+      };
+
       const normalized: any = {};
       Object.entries(geminiResult).forEach(([k, v]) => {
-        const key = k.toLowerCase().trim();
+        const raw = k.toLowerCase().trim();
+        const key = platformKeyAlias[raw] || raw;
         if (key === 'research') { normalized.research = v; localStorage.setItem('office_research', JSON.stringify(v)); }
         else normalized[key] = (Array.isArray(v) ? v : [v]).map(normalizeVariant);
       });
+
+      // 선택한 플랫폼 데이터가 없으면 유사 키로 재탐색
+      if (!normalized[selectedPlatform]) {
+        const fallbackKey = Object.keys(normalized).find(k => k !== 'research' && Array.isArray(normalized[k]) && normalized[k].length > 0);
+        if (fallbackKey) normalized[selectedPlatform] = normalized[fallbackKey];
+      }
 
       setResults(normalized);
       setActiveTab(selectedPlatform);
