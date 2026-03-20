@@ -653,6 +653,14 @@ ${platformGuides(selectedPlatform)}
     const scenes = new Set(Object.keys(imgLoadingMap).filter(k=>k.startsWith(`${activeTab}-${vIdx}-scene-`)&&imgLoadingMap[k]).map(k=>parseInt(k.split('-').pop() || '0')));
     const instaL = !!imgLoadingMap[`${activeTab}-${vIdx}-instagram-0`];
 
+    const trendRaw = JSON.parse(localStorage.getItem('office_trend_raw') || 'null');
+    const issueMap = new Map((trendRaw?.trending_issues || []).filter((t: any) => t.url).map((t: any) => [t.url, t.title]));
+    const extraCitations = (trendRaw?.citations || []).filter((c: any) => c.url && !issueMap.has(c.url));
+    const allRefs = [
+      ...(trendRaw?.trending_issues || []).filter((t: any) => t.url).map((t: any) => ({ url: t.url, title: t.title })),
+      ...extraCitations.map((c: any) => ({ url: c.url, title: c.title || c.url })),
+    ];
+
     return (
       <div className="flex-1 overflow-y-auto p-8 bg-white">
         <div className="max-w-5xl mx-auto py-8">
@@ -675,6 +683,28 @@ ${platformGuides(selectedPlatform)}
             {activeTab==='shorts' && <ShortsStoryboard variant={variant} onGenerateScene={(i:any)=>generateSingleImage('shorts',vIdx,'scene',i)} onUploadScene={(i:any,s:any)=>{const upd={...results}; upd.shorts[vIdx].storyboard[i].imageUrl=s; setResults({...upd});}} sceneLoadingSet={scenes} />}
             {!['blog', 'instagram', 'shorts'].includes(activeTab) && <div className="p-8 bg-gray-50 rounded-3xl"><pre className="whitespace-pre-wrap text-lg text-gray-600 leading-relaxed font-medium">{variant.content}</pre></div>}
           </div>
+
+          {allRefs.length > 0 && (
+            <div className="mt-8 bg-blue-50/30 border border-blue-100/50 rounded-3xl p-8">
+              <h3 className="text-blue-600 font-black text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
+                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                분석에 사용한 참고 자료
+              </h3>
+              <div className="space-y-3">
+                {allRefs.map((item: any, i: number) => (
+                  <a key={i} href={item.url} target="_blank" rel="noopener noreferrer"
+                    className="bg-white rounded-2xl p-4 border border-blue-100/60 flex items-center gap-4 hover:border-blue-300 hover:shadow-sm transition-all group block">
+                    <div className="w-8 h-8 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0 text-blue-600 font-black text-sm group-hover:bg-blue-500 group-hover:text-white transition-colors">{i + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-gray-900 text-sm mb-0.5 truncate group-hover:text-blue-600 transition-colors">{item.title}</div>
+                      <div className="text-blue-400 text-xs truncate">{item.url}</div>
+                    </div>
+                    <span className="text-blue-400 text-xs font-bold flex-shrink-0 group-hover:text-blue-600">열기</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
