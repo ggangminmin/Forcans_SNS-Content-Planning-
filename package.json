@@ -2,7 +2,6 @@
   "name": "sample_left",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "concurrently \"next dev\" \"npm run server\"",
     "server": "node server/index.cjs",
