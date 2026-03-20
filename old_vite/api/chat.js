@@ -2,7 +2,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY?.trim();
-  if (!OPENAI_API_KEY) return res.status(200).json({ skipped: true, error: 'OPENAI_API_KEY 환경변수 없음' });
+  if (!OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY 환경변수 없음' });
 
   try {
     const { messages } = req.body;
@@ -21,10 +21,10 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-    if (!response.ok) return res.status(200).json({ skipped: true, error: data.error?.message || `OpenAI ${response.status}` });
+    if (!response.ok) return res.status(response.status).json({ error: data.error?.message });
 
     res.json(data);
   } catch (err) {
-    res.status(200).json({ skipped: true, error: err.message });
+    res.status(500).json({ error: err.message });
   }
 }

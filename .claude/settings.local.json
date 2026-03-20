@@ -2,7 +2,39 @@
   "permissions": {
     "allow": [
       "Bash(npm install:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(node -e \":*)",
+      "Bash(npx next:*)",
+      "Bash(curl -s http://localhost:3000 -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s http://localhost:3001 -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s http://localhost:3000/poc -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s -X POST http://localhost:3001/api/gemini -H \"Content-Type: application/json\" -d '{\"\"parts\"\":[{\"\"text\"\":\"\"test\"\"}]}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/gemini -H \"Content-Type: application/json\" -d '{:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -X POST http://localhost:3001/api/gemini -H \"Content-Type: application/json\" -d '{:*)",
+      "Bash(curl -s -o /tmp/response.txt -w \"\\\\nHTTP_STATUS:%{http_code}\" -X POST http://localhost:3000/api/gemini -H \"Content-Type: application/json\" --data-binary @\"C:/Users/AIWEB/AppData/Local/Temp/test_payload.json\")",
+      "Bash(node -c server/index.cjs)",
+      "Bash(curl -s -X POST http://localhost:3001/api/scrape -H \"Content-Type: application/json\" -d '{\"\"\"\"url\"\"\"\":\"\"\"\"https://www.naver.com\"\"\"\"}' -v)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist)",
+      "Bash(cmd /c \"taskkill /PID 21676 /F\")",
+      "Bash(powershell -Command 'Stop-Process -Id 21676 -Force')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/poc)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
+      "Bash(powershell -Command \"Get-Process node | Where-Object {$_MainWindowTitle -eq ''''} | Stop-Process -Force\")",
+      "Bash(powershell -Command \"Stop-Process -Name node -Force\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/api/trend -X POST -H \"Content-Type: application/json\" -d '{\"\"keyword\"\":\"\"test\"\"}')",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3001 -State Listen | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_-Force }\")",
+      "Bash(powershell -Command \":*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/api/trend -X POST -H \"Content-Type: application/json\" -d '{\"\"keyword\"\":\"\"테스트\"\"}')",
+      "Bash(curl -s -w \"\\\\nHTTP:%{http_code}\" http://localhost:3001/api/trend -X POST -H \"Content-Type: application/json\" -d '{\"\"\"\"keyword\"\"\"\":\"\"\"\"테스트\"\"\"\"}')",
+      "Bash(powershell -Command \"$conn = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue; if \\($conn\\) { Stop-Process -Id $conn.OwningProcess -Force; Write-Host ''종료'' } else { Write-Host ''없음'' }\")",
+      "Bash(powershell -Command \"Stop-Process -Name node -Force -ErrorAction SilentlyContinue; echo done\")",
+      "Bash(curl -s -w \"\\\\nHTTP:%{http_code}\" http://localhost:3001/api/image -X POST -H \"Content-Type: application/json\" -d '{\"\"\"\"prompt\"\"\"\":\"\"\"\"A cute dog sitting on a green grass field, product photography style\"\"\"\"}')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/api/image -X POST -H \"Content-Type: application/json\" -d '{\"\"prompt\"\":\"\"test\"\"}')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/api/chat -X POST -H \"Content-Type: application/json\" -d '{\"\"messages\"\":[]}')",
+      "Bash(powershell -Command \"Stop-Process -Name node -Force -ErrorAction SilentlyContinue\")",
+      "Bash(powershell -Command \"Get-Process node -ErrorAction SilentlyContinue | Select-Object Id, Path, CommandLine | Format-List\")"
     ]
   }
 }
