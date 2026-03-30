@@ -6,7 +6,7 @@ export async function POST(req: Request) {
     const { prompt } = await req.json();
     const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!apiKey) return NextResponse.json({ error: 'Gemini API key missing' }, { status: 500 });
+    if (!apiKey) return NextResponse.json({ error: 'Gemini API 키가 설정되지 않았습니다.' }, { status: 500 });
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`, {
       method: 'POST',
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     if (!response.ok) return NextResponse.json(data, { status: response.status });
 
     const part = data.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-    if (!part) throw new Error('Image generation failed');
+    if (!part) throw new Error('이미지 생성에 실패했습니다.');
 
     return NextResponse.json({ url: `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}` });
   } catch (err: any) {

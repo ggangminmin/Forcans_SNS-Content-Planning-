@@ -7,9 +7,9 @@ export async function POST(req: Request) {
     const { parts } = await req.json();
     const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!apiKey) return NextResponse.json({ error: 'Gemini API key missing' }, { status: 500 });
+    if (!apiKey) return NextResponse.json({ error: 'Gemini API 키가 설정되지 않았습니다.' }, { status: 500 });
     if (!parts || !Array.isArray(parts) || parts.length === 0) {
-      return NextResponse.json({ error: 'parts required' }, { status: 400 });
+      return NextResponse.json({ error: 'parts 배열이 필요합니다.' }, { status: 400 });
     }
 
     const response = await fetch(

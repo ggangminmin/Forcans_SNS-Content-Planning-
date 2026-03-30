@@ -1,124 +1,324 @@
-import { NextResponse } from 'next/server';
-export const dynamic = 'force-dynamic';
+import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function POST(req: Request) {
-  try {
-    const { keyword } = await req.json();
-    if (!keyword) return NextResponse.json({ error: 'keyword required' }, { status: 400 });
+type TavilyResult = {
+  title?: string;
+  url?: string;
+  content?: string;
+  raw_content?: string;
+};
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: 'OpenAI API key missing' }, { status: 500 });
+type TrendIssue = {
+  title: string;
+  summary: string;
+  source: string;
+  url: string | null;
+};
 
-    const prompt = `현재 대한민국에서 가장 주목받고 있는 '실시간 핫이슈', 'SNS 바이럴 트렌드', '라이프스타일 밈(Meme)'을 광범위하게 조사하고, 이를 "${keyword}"(상품/카테고리)와 연결할 수 있는 지점을 찾아줘.
+type KeywordSuggestion = {
+  keyword: string;
+  reason: string;
+};
 
-다음 4가지 관점에서 각각 검색을 수행하고 결과를 합쳐서 총 12개 이상의 이슈를 찾아줘:
-1. [범용 트렌드] 지금 한국 SNS(인스타, 릴스, 틱톡)에서 가장 유행하는 챌린지, 음악, 밈, 키워드
-2. [사회적 이슈] 오늘/이번 주 가장 뉴스 보도가 많거나 포털 실시간 반응이 뜨거운 화제 (정치/경제 제외)
-3. [카테고리 트렌드] "${keyword}"가 속한 산업군(반려동물, 뷰티, 푸드, 생활용품 등)에서 새롭게 떠오르는 소비자 관심사나 문제 해결 방식
-4. [시즌/이슈] 현재 계절, 다가오는 기념일, 날씨 등과 연계된 '사람들이 지금 가장 하고 싶어 하는 것'
+type ContentIdea = {
+  platform: "instagram" | "blog" | "shorts";
+  idea: string;
+  angle: string;
+};
 
-각 이슈마다 아래 형식으로 출처를 인용하며 설명해줘:
-- 제목
-- 2~3문장 요약 (왜 지금 주목받는지, 어떤 반응이 있는지 포함)
-- 출처 매체명
+type TrendResponse = {
+  trending_issues: TrendIssue[];
+  keywords: KeywordSuggestion[];
+  hashtags: string[];
+  citations: Array<{ title: string; url: string }>;
+};
 
-이후 아래 JSON을 한 번에 포함해줘 (마지막에 추가):
----JSON---
-{
-  "keywords": [{"keyword": "트렌드 키워드", "reason": "왜 핫한지"}],
-  "hashtags": ["#태그1", "#태그2"],
-  "content_ideas": [
-    {"platform": "instagram", "idea": "세상 트렌드와 상품을 엮는 기발한 아이디어", "angle": "어떤 트렌드를 활용했는가?"},
-    {"platform": "blog", "idea": "세상 트렌드와 상품을 엮는 기발한 아이디어", "angle": "어떤 트렌드를 활용했는가?"},
-    {"platform": "shorts", "idea": "세상 트렌드와 상품을 엮는 기발한 아이디어", "angle": "어떤 트렌드를 활용했는가?"}
-  ]
+function cleanText(value: unknown) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
----END---`;
 
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        input: [{ role: 'user', content: prompt }],
-        tools: [{ type: 'web_search_preview' }],
-        text: { format: { type: 'text' } }
-      })
-    });
+function shortenText(value: unknown, maxLength: number) {
+  const text = cleanText(value);
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trim()}…`;
+}
 
-    const data = await response.json();
-
-    // Responses API 접근 불가 시 Chat Completions로 폴백
-    if (!response.ok) {
-      console.log('[/api/trend] Responses API failed, falling back to Chat Completions');
-      return await fallbackTrend(keyword, apiKey);
-    }
-
-    const msgContent = data.output
-      ?.find((o: any) => o.type === 'message')
-      ?.content || [];
-
-    const outputText = msgContent.find((c: any) => c.type === 'output_text');
-    const fullText = outputText?.text || '';
-
-    const annotations: any[] = outputText?.annotations || [];
-    const seen = new Set<string>();
-    const citations = annotations
-      .filter((a: any) => a.type === 'url_citation' && a.url)
-      .filter((a: any) => { if (seen.has(a.url)) return false; seen.add(a.url); return true; })
-      .map((a: any) => ({ url: a.url, title: a.title || '' }));
-
-    const jsonMatch = fullText.match(/---JSON---\s*([\s\S]*?)---END---/) ||
-                      fullText.match(/```json\s*([\s\S]*?)```/) ||
-                      fullText.match(/(\{[\s\S]*\})/);
-    let meta: any = {};
-    try { meta = JSON.parse(jsonMatch ? jsonMatch[1] : '{}'); } catch {}
-
-    const issueBlocks = fullText
-      .replace(/---JSON---[\s\S]*?---END---/, '')
-      .replace(/```json[\s\S]*?```/, '')
-      .split(/\n(?=\d+[\.\)]|##\s|\*\*\d+)/)
-      .map((s: string) => s.trim())
-      .filter((s: string) => s.length > 30);
-
-    const trending_issues = issueBlocks.slice(0, 15).map((block: string, i: number) => {
-      const lines = block.split('\n').map((l: string) => l.trim()).filter(Boolean);
-      const title = lines[0]?.replace(/^[\d\.\*\#\)\(\s]+/, '')?.replace(/\*\*/g, '')?.trim() || `이슈 ${i + 1}`;
-      const summary = lines.slice(1).join(' ').replace(/출처[:：].*/i, '').replace(/\*\*/g, '').trim().slice(0, 250);
-      const sourceMatch = block.match(/출처[:：]\s*(.+)/i);
-      return { title, summary, source: sourceMatch?.[1]?.trim() || '', url: citations[i]?.url || null };
-    }).filter((issue: any) => issue.title.length > 2);
-
-    return NextResponse.json({
-      trending_issues,
-      keywords: meta.keywords || [],
-      hashtags: meta.hashtags || [],
-      content_ideas: meta.content_ideas || [],
-      citations,
-    });
-  } catch (err: any) {
-    console.error('[/api/trend] Error:', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+function toHostnameLabel(url: string) {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    return hostname.split(".")[0] || hostname;
+  } catch {
+    return "";
   }
 }
 
-async function fallbackTrend(keyword: string, apiKey: string) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'You are a Korean SNS trend analyst. Always respond in valid JSON format only.' },
-        { role: 'user', content: `"${keyword}"와 관련된 한국 SNS 트렌드와 이슈 8개를 분석해줘. JSON 형식으로만 답변: {"trending_issues":[{"title":"","summary":"","source":"","url":null}],"keywords":[{"keyword":"","reason":""}],"hashtags":["#태그"],"content_ideas":[{"platform":"instagram","idea":"","angle":""},{"platform":"blog","idea":"","angle":""},{"platform":"shorts","idea":"","angle":""}]}` }
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 2000,
+function normalizeIssue(raw: unknown, index: number): TrendIssue | null {
+  const issue = typeof raw === "object" && raw ? (raw as Record<string, unknown>) : {};
+  const title = cleanText(issue.title || `트렌드 이슈 ${index + 1}`);
+  const summary = shortenText(issue.summary || issue.description || issue.content, 220) || "관련 요약을 아직 불러오지 못했습니다.";
+  const url = cleanText(issue.url) || null;
+  const source = cleanText(issue.source) || (url ? toHostnameLabel(url) : "");
+
+  if (!title) return null;
+
+  return {
+    title,
+    summary,
+    source,
+    url,
+  };
+}
+
+function buildFallbackIssues(results: TavilyResult[], keyword: string): TrendIssue[] {
+  const seen = new Set<string>();
+  const normalized = results
+    .map((result, index) => {
+      const title = cleanText(result.title) || `${keyword} 관련 트렌드 ${index + 1}`;
+      const url = cleanText(result.url) || null;
+      const dedupeKey = url || title;
+
+      if (!dedupeKey || seen.has(dedupeKey)) return null;
+      seen.add(dedupeKey);
+
+      return {
+        title,
+        summary:
+          shortenText(result.content || result.raw_content, 220) ||
+          `${keyword} 관련 검색 결과를 바탕으로 정리한 참고 이슈입니다.`,
+        source: url ? toHostnameLabel(url) : "",
+        url,
+      } satisfies TrendIssue;
     })
+    .filter((issue): issue is TrendIssue => Boolean(issue));
+
+  if (normalized.length > 0) return normalized.slice(0, 10);
+
+  return [
+    {
+      title: `${keyword} 관련 트렌드 조사`,
+      summary: "검색 결과가 충분하지 않아 입력한 키워드를 기준으로 기본 조사 항목을 만들었습니다. 검색어를 더 구체적으로 적으면 더 정확한 결과를 받을 수 있습니다.",
+      source: "기본 분석",
+      url: null,
+    },
+  ];
+}
+
+function buildDefaultResponse(keyword: string, issues: TrendIssue[], citations: Array<{ title: string; url: string }>): TrendResponse {
+  const compactKeyword = keyword.replace(/\s+/g, "");
+  const safeHashtag = compactKeyword ? `#${compactKeyword.replace(/[^0-9A-Za-z가-힣]/g, "")}` : "#트렌드";
+
+  return {
+    trending_issues: issues,
+    keywords: [
+      {
+        keyword,
+        reason: "입력한 상품 또는 서비스 정보를 기준으로 조사한 핵심 키워드입니다.",
+      },
+    ],
+    hashtags: [safeHashtag, "#콘텐츠기획", "#트렌드조사"].filter(Boolean),
+    citations,
+  };
+}
+
+async function tavilySearch(query: string, apiKey: string) {
+  const response = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: apiKey,
+      query: `${query} 최신 SNS 트렌드 밈 소비자 반응 바이럴 이슈`,
+      search_depth: "advanced",
+      include_answer: true,
+      include_raw_content: false,
+      max_results: 10,
+    }),
   });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || "Tavily 검색에 실패했습니다.");
+  }
+
+  return response.json();
+}
+
+async function enrichWithOpenAI(params: {
+  keyword: string;
+  openaiKey: string;
+  fallbackIssues: TrendIssue[];
+  searchContext: string;
+}) {
+  const { keyword, openaiKey, fallbackIssues, searchContext } = params;
+
+  const prompt = `
+당신은 대한민국 최고의 SNS 트렌드 분석가이자 콘텐츠 전략가입니다.
+제공된 [검색 결과]는 실시간 뉴스, 세상의 이슈, 최신 SNS 밈 등을 포함하고 있습니다.
+
+당신의 임무는 두 가지입니다:
+1. **세상 이슈 발굴**: 제공된 [검색 결과]에서 현재 대한민국 대중이 가장 뜨겁게 반응하고 있는 '실시간 핫이슈', '정치/경제/사회/문화 뉴스', '최신 SNS 밈' 등을 최소 10개 이상 추출하세요. (사용자가 입력한 ${keyword}와 상관없는 순수 외부 이슈여야 합니다.)
+2. **전략적 연결(Creative Connection)**: 발굴한 각각의 세상 이슈를 사용자의 상품/서비스(${keyword})와 창의적으로 연결하여, '왜 이 트렌드와 이 상품을 함께 이야기해야 하는지' 명분을 만드세요. 이슈 자체는 세상의 이야기지만, 그 끝은 자연스럽게 상품의 소구점으로 이어지는 '연결의 기술'을 보여주세요.
+
+[검색 결과]
+${searchContext}
+
+[반환 규칙]
+1. trending_issues: [검색 결과]의 뉴스/이슈를 바탕으로 요약한 리스트 (최소 10개 필수). 
+   - 반드시 각 이슈에 해당하는 원본 검색 결과의 **url**과 **source**를 객체에 포함하세요. (예: { "title": "...", "summary": "...", "url": "원본URL", "source": "출처명" })
+   - URL이 없는 이슈는 제외하거나, 검색 결과에 있는 가장 관련성 높은 URL을 찾아서 꼭 기입하세요.
+2. keywords: 현재 트렌드를 관통하는 '트렌드 키워드'와 그 이유.
+3. hashtags: 바이럴 가능성이 높은 태그.
+5. 마크다운 없이 순수 JSON object만 반환하세요.
+`;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${openaiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: "항상 유효한 JSON object만 반환하세요.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(errorBody || "OpenAI 보강에 실패했습니다.");
+  }
+
   const data = await response.json();
-  let trendData: any = {};
-  try { trendData = JSON.parse(data.choices?.[0]?.message?.content || '{}'); } catch {}
-  return NextResponse.json({ trending_issues: trendData.trending_issues || [], keywords: trendData.keywords || [], hashtags: trendData.hashtags || [], content_ideas: trendData.content_ideas || [], citations: [] });
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("OpenAI 응답이 비어 있습니다.");
+  }
+
+  return JSON.parse(content) as Partial<TrendResponse>;
+}
+
+function normalizeResponse(raw: Partial<TrendResponse> | null, fallback: TrendResponse): TrendResponse {
+  if (!raw || typeof raw !== "object") {
+    return fallback;
+  }
+
+  const issues = Array.isArray(raw.trending_issues)
+    ? raw.trending_issues
+        .map((issue, index) => normalizeIssue(issue, index))
+        .filter((issue): issue is TrendIssue => Boolean(issue))
+        .slice(0, 10)
+    : [];
+
+  const keywords = Array.isArray(raw.keywords)
+    ? raw.keywords
+        .map((entry) => {
+          const keyword = cleanText((entry as Record<string, unknown>)?.keyword);
+          const reason = cleanText((entry as Record<string, unknown>)?.reason);
+          if (!keyword) return null;
+          return { keyword, reason: reason || "연관 키워드입니다." };
+        })
+        .filter((entry): entry is KeywordSuggestion => Boolean(entry))
+        .slice(0, 8)
+    : [];
+
+  const hashtags = Array.isArray(raw.hashtags)
+    ? raw.hashtags
+        .map((tag) => cleanText(tag))
+        .filter(Boolean)
+        .slice(0, 12)
+    : [];
+
+
+  return {
+    trending_issues: issues.length ? issues : fallback.trending_issues,
+    keywords: keywords.length ? keywords : fallback.keywords,
+    hashtags: hashtags.length ? hashtags : fallback.hashtags,
+    citations: fallback.citations,
+  };
+}
+
+export async function POST(req: Request) {
+  try {
+    const { keyword: rawKeyword } = await req.json();
+    const keyword = cleanText(rawKeyword);
+
+    if (!keyword) {
+      return NextResponse.json({ error: "키워드가 필요합니다." }, { status: 400 });
+    }
+
+    const tavilyKey = process.env.TAVILY_API_KEY;
+    if (!tavilyKey) {
+      return NextResponse.json({ error: "Tavily API 키가 설정되지 않았습니다." }, { status: 500 });
+    }
+
+    // 1. 세상의 핫이슈 및 트렌드 검색 (Broad & Primary)
+    const generalSearchPromise = tavilySearch("오늘 대한민국 가장 화제인 뉴스 기사 실시간 이슈 SNS 트렌드 밈 유행", tavilyKey);
+    // 2. 검색 유입 및 관련 이슈 검색 (General Viral Focus)
+    const viralSearchPromise = tavilySearch("현재 SNS에서 가장 반응 좋은 콘텐츠 주제 및 바이럴 이슈", tavilyKey);
+
+    const [generalRes, viralRes] = await Promise.all([generalSearchPromise, viralSearchPromise]);
+    
+    // 결과 합치기 (상품보다는 '세상의 이슈' 위주로 수집)
+    const results = [
+      ...(Array.isArray(generalRes?.results) ? generalRes.results : []),
+      ...(Array.isArray(viralRes?.results) ? viralRes.results : [])
+    ] as TavilyResult[];
+    const citations = results
+      .map((result) => ({
+        title: cleanText(result.title) || "참고 링크",
+        url: cleanText(result.url),
+      }))
+      .filter((citation) => citation.url)
+      .slice(0, 10);
+
+    const fallbackIssues = buildFallbackIssues(results, keyword);
+    const fallbackResponse = buildDefaultResponse(keyword, fallbackIssues, citations);
+    const searchContext = results.length
+      ? results
+          .map((result, index) =>
+            [
+              `[${index + 1}] ${cleanText(result.title) || "제목 없음"}`,
+              `URL: ${cleanText(result.url) || "없음"}`,
+              `내용: ${shortenText(result.content || result.raw_content, 500) || "요약 없음"}`,
+            ].join("\n"),
+          )
+          .join("\n\n")
+      : `검색 결과가 충분하지 않았습니다. 키워드: ${keyword}`;
+
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (!openaiKey) {
+      return NextResponse.json(fallbackResponse);
+    }
+
+    try {
+      const enriched = await enrichWithOpenAI({
+        keyword,
+        openaiKey,
+        fallbackIssues,
+        searchContext,
+      });
+
+      return NextResponse.json(normalizeResponse(enriched, fallbackResponse));
+    } catch (error) {
+      console.error("[/api/trend] OpenAI fallback:", error);
+      return NextResponse.json(fallbackResponse);
+    }
+  } catch (error) {
+    console.error("[/api/trend] error:", error);
+    return NextResponse.json({ error: "트렌드 조사 중 오류가 발생했습니다." }, { status: 500 });
+  }
 }

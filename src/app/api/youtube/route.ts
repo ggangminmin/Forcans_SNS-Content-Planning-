@@ -6,7 +6,7 @@ export async function POST(req: Request) {
     const { query } = await req.json();
     const apiKey = process.env.YOUTUBE_API_KEY;
 
-    if (!apiKey) return NextResponse.json({ error: 'YouTube API key missing' }, { status: 500 });
+    if (!apiKey) return NextResponse.json({ error: 'YouTube API 키가 설정되지 않았습니다.' }, { status: 500 });
 
     const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=4&q=${encodeURIComponent(query)}&type=video&key=${apiKey}`;
     const response = await fetch(url);

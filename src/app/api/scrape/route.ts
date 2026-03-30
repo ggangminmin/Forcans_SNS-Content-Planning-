@@ -9,14 +9,14 @@ export async function POST(req: Request) {
     try {
       body = await req.json();
     } catch (e: any) {
-      console.error('[/api/scrape] Body parse error:', e.message);
-      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+      console.error('[/api/scrape] 요청 본문 파싱 오류:', e.message);
+      return NextResponse.json({ error: '잘못된 요청 본문입니다.' }, { status: 400 });
     }
 
     const { url } = body;
-    console.log('[/api/scrape] url:', url);
+    console.log('[/api/scrape] URL:', url);
 
-    if (!url) return NextResponse.json({ error: 'URL is required', received: body }, { status: 400 });
+    if (!url) return NextResponse.json({ error: 'URL이 필요합니다.', received: body }, { status: 400 });
 
     const response = await fetch(url, {
       headers: {
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ title, content: text });
   } catch (err: any) {
-    console.error('[/api/scrape] Error:', err.message);
-    return NextResponse.json({ title: 'Error', content: '' }, { status: 200 });
+    console.error('[/api/scrape] 오류:', err.message);
+    return NextResponse.json({ title: '오류', content: '' }, { status: 200 });
   }
 }

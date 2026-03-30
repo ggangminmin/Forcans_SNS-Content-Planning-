@@ -1,29 +1,40 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Loader2, Check, Sparkles, Image, Wand2, Upload, Search, Link as LinkIcon, DollarSign, AlignLeft, Info, FileText, Instagram, Youtube, Twitter, Film, PenSquare, MessageCircleMore, PencilLine, Trash2 } from 'lucide-react';
+import { 
+  Loader2, Check, Sparkles, Image, Wand2, Upload, Search, 
+  Link as LinkIcon, DollarSign, AlignLeft, Info, FileText, 
+  Instagram, Youtube, Twitter, Film, PenSquare, 
+  MessageCircleMore, PencilLine, Trash2, Layout, BarChart3 
+} from 'lucide-react';
 import './home.css';
 import { Sidebar } from '@/components/layout/sidebar';
 
 const SNS_PLATFORMS = [
-  { key: 'instagram', label: 'Instagram',     icon: 'insta',   color: '#ec4899', bg: 'rgba(236,72,153,0.12)' },
-  { key: 'threads',   label: 'Threads',        icon: 'threads', color: '#374151', bg: 'rgba(55,65,81,0.08)'   },
+  { key: 'instagram', label: 'Instagram',      icon: 'insta',   color: '#ec4899', bg: 'rgba(236,72,153,0.12)' },
   { key: 'shorts',    label: 'YouTube Shorts', icon: 'shorts',  color: '#ef4444', bg: 'rgba(239,68,68,0.12)'  },
   { key: 'blog',      label: '블로그',           icon: 'blog',    color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
-  { key: 'twitter',   label: 'X (Twitter)',    icon: 'twitter', color: '#1d9bf0', bg: 'rgba(29,155,240,0.12)' },
-  { key: 'tiktok',    label: 'TikTok',         icon: 'tiktok',  color: '#00bcd4', bg: 'rgba(0,188,212,0.12)'  },
 ];
 
 const PLATFORM_ICONS: Record<string, any> = {
   instagram: Instagram,
-  threads: MessageCircleMore,
   shorts: Youtube,
   blog: PenSquare,
-  twitter: Twitter,
-  tiktok: Film,
 };
 
-type View = 'input' | 'results' | 'research';
+type View = 'input' | 'research' | 'planning' | 'results';
+
+interface PlanningDoc {
+  concept: string;
+  trendReason: string;
+  targetPersona: string;
+  targetReason: string;
+  tone: string;
+  visualMood: string;
+  coreMessage: string;
+  cta: string;
+  platformStrategy: Record<string, string>;
+}
 
 interface StoryboardFrame { timeCode: string; visual: string; script: string; imageUrl?: string; }
 interface ContentVariant  { content: string; images?: string[]; storyboard?: StoryboardFrame[]; visualPrompts?: string[]; visual?: string; duration?: string; }
@@ -336,6 +347,19 @@ export default function HomePage() {
   const [copied, setCopied]       = useState<string|null>(null);
   const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
 
+  // Phase 4 states
+  const [planningDoc, setPlanningDoc] = useState<PlanningDoc | null>(null);
+  const [planningLoading, setPlanningLoading] = useState(false);
+  const [planningEditMode, setPlanningEditMode] = useState(false);
+  const [canOpenResearch, setCanOpenResearch] = useState(false);
+  const [canOpenPlanning, setCanOpenPlanning] = useState(false);
+  const [canOpenResults, setCanOpenResults] = useState(false);
+
+  // Trend issues state
+  const [selectedIssue, setSelectedIssue] = useState<any>(null);
+  const [scrapedData, setScrapedData] = useState('');
+  const [trendData, setTrendData] = useState<any>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const togglePlatform = (key: string) => setSelectedPlatform(key);
@@ -362,12 +386,12 @@ export default function HomePage() {
     setImages(prev => [...prev, ...next].slice(0, 4));
   };
 
-  const generateContent = async () => {
+  const analyzeTrend = async () => {
     const hasData = url || product.name || product.feature;
-    if (!hasData || !selectedPlatform) return;
-    setLoading(true); setResults(null); setLogs([]);
+    if (!hasData) return;
+    setLoading(true); setLogs([]);
     try {
-      let scrapedData = '';
+      let sd = '';
       if (url && url.startsWith('http')) {
         addLog('🔗 [분석중] URL 페이지 정보 읽는 중..');
         try {
@@ -377,15 +401,13 @@ export default function HomePage() {
             body: JSON.stringify({ url })
           });
           const data = await res.json();
-          scrapedData = `
-[웹페이지 실제 내용]
-제목: ${data.title}
-내용: ${data.content}`;
+          sd = `[웹페이지 실제 내용]\n제목: ${data.title}\n내용: ${data.content}`;
+          setScrapedData(sd);
         } catch (e) { console.error('Scraping failed', e); }
       }
 
-      let trendContext = '';
-      const trendKeyword = product.name || product.feature?.split(/[\s,]/)[0] || '';
+      // 트렌드 검색어: 상품 이름과 주요 기능/설명을 조합하여 '세상 속의 이슈'를 찾기 좋게 만듬
+      const trendKeyword = `${product.name} ${product.feature || ''}`.trim().slice(0, 70);
       if (trendKeyword) {
         addLog('📊 [트렌드분석] 관련 이슈 및 실시간 트렌드 검색 중..');
         try {
@@ -394,7 +416,6 @@ export default function HomePage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ keyword: trendKeyword }),
           });
-          // Retry after 1.5s if 404
           if (trendRes.status === 404) {
             await new Promise(r => setTimeout(r, 1500));
             trendRes = await fetch('/api/trend', {
@@ -403,84 +424,126 @@ export default function HomePage() {
               body: JSON.stringify({ keyword: trendKeyword }),
             });
           }
-          const trendData = await trendRes.json();
-          if (trendRes.ok && trendData.trending_issues) {
-            const issues = trendData.trending_issues.map((t: any) => `- ${t.title}: ${t.summary}`).join('\n');
-            const keywords = trendData.keywords?.map((k: any) => `${k.keyword}(${k.reason})`).join(', ') || '';
-            const hashtags = trendData.hashtags?.join(' ') || '';
-            const ideas = trendData.content_ideas?.map((c: any) => `[${c.platform}] ${c.idea} → ${c.angle}`).join('\n') || '';
-            trendContext = `
-
-[실시간 트렌드 분석 & 이슈 (${trendKeyword})]
-트렌딩 이슈:
-${issues}
-
-지금 핫한 키워드: ${keywords}
-
-플랫폼별 콘텐츠 추천 아이디어:
-${ideas}
-
-추천 해시태그: ${hashtags}`;
-            localStorage.setItem('office_trend_raw', JSON.stringify(trendData));
-            addLog(`✅[트렌드분석] 실시간 이슈 ${trendData.trending_issues.length}개 수집!`);
+          const data = await trendRes.json();
+          if (trendRes.ok && data.trending_issues) {
+            setTrendData(data);
+            localStorage.setItem('office_trend_raw', JSON.stringify(data));
+            addLog(`✅[트렌드분석] 실시간 이슈 ${data.trending_issues.length}개 수집!`);
+            setCanOpenResearch(true);
+            setView('research');
           }
         } catch (e) {
           console.error('트렌드 검색 실패', e);
-          addLog('⚠️ 트렌드 검색 실패. 계속 진행합니다.');
+          addLog('⚠️ 트렌드 검색 실패.');
         }
       }
+    } catch (err: any) { 
+      console.error(err);
+      addLog(`❌ 오류: ${err.message}`); 
+    } finally { setLoading(false); }
+  };
 
-      addLog('🤖 [분석중] 트렌드 분석 및 콘텐츠 생성 중(GPT)...');
-      const trimmedScrape = scrapedData.slice(0, 1500);
-      const trimmedTrend = trendContext.slice(0, 2000);
+  const generatePlanningDoc = async (issue: any) => {
+    setSelectedIssue(issue);
+    setPlanningLoading(true); setView('planning'); setLogs([]);
+    try {
+      addLog('🤖 [기획중] 트렌드 기반 기획서 초안 생성 중...');
       const ctxBody = `[사용자 입력 상품 정보]
 상품명: ${product.name}
 가격: ${product.price}
 기능: ${product.feature}
 상세: ${product.detail}
 참고 URL: ${url}
-${trimmedScrape}${trimmedTrend}`;
+${scrapedData}
+
+[선택한 트렌드 이슈]
+${issue.title}: ${issue.summary}`;
+
+      const planningPrompt = `당신은 대한민국 최고의 SNS 콘텐츠 기획 전문가입니다. 
+사용자가 선택한 기본 플랫폼 [${selectedPlatform}]을 최우선 타겟으로 하여, 상품 정보와 실시간 트렌드 이슈를 '파괴적으로 혼합'한 독창적인 SNS 콘텐츠 기획서를 JSON으로 작성하세요.
+
+[핵심 미션]
+1. 단순히 상품 설명을 나열하지 마세요. 
+2. 선택된 [트렌드 이슈]가 왜 지금 뜨거운지 분석하고, 이를 상품의 소구점과 연결하여 대중이 열광할 수 있는 '뉴 앵글'을 제시하세요.
+3. 기획서는 즉시 제작이 가능한 수준으로 구체적이어야 합니다.
+
+반환 형식:
+{
+  "concept": "트렌드와 상품이 결합된 핵심 컨셉 한 줄",
+  "trendReason": "이 트렌드(세상의 이슈)와 상품을 연결한 전략적 이유",
+  "targetPersona": "이 트렌드에 반응할 핵심 타겟 페르소나",
+  "targetReason": "이 타겟이 해당 트렌드와 상품의 조합에 반응할 심리학적 이유",
+  "tone": "브랜드 아이덴티티와 트렌드 무드에 맞춘 말투",
+  "visualMood": "시각적 연출 가이드",
+  "coreMessage": "가장 강력한 한 마디 메시지",
+  "cta": "전환을 유도하는 구체적인 행동 유도",
+  "platformStrategy": {
+    "instagram": "인스타그램 바이럴 전략",
+    "shorts": "유튜브 쇼츠 숏폼 전략",
+    "blog": "네이버 블로그 정보/리뷰 전략"
+  }
+}`;
+
+      const messages = [
+        { role: 'system', content: planningPrompt },
+        { role: 'user', content: ctxBody }
+      ];
+
+      const res = await callGPT(messages);
+      setPlanningDoc(res);
+      setCanOpenPlanning(true);
+      addLog('✅ 기획서 생성 완료!');
+    } catch (err: any) {
+      console.error(err);
+      addLog(`❌ 기획서 생성 오류: ${err.message}`);
+    } finally { setPlanningLoading(false); }
+  };
+
+  const generateContent = async () => {
+    if (!planningDoc || !selectedPlatform) return;
+    setLoading(true); setResults(null); setLogs([]);
+    try {
+      addLog('🤖 [생성중] 기획서가 반영된 콘텐츠 생성 중(GPT)...');
+      
+      const ctxBody = `[상품 정보]
+상품명: ${product.name}
+기능: ${product.feature}
+
+[확정된 기획서]
+컨셉: ${planningDoc.concept}
+타겟: ${planningDoc.targetPersona}
+톤앤매너: ${planningDoc.tone}
+메시지: ${planningDoc.coreMessage}
+플랫폼 전략: ${planningDoc.platformStrategy[selectedPlatform] || ''}`;
+
       const platformGuides = (p: string) => {
         if (p === 'instagram') return `"instagram": [{"content": "1안 내용(600자내외, 감성문구+CTA+해시태그)", "visual": "이미지묘사(한글 1~2문장)"}, {"content": "2안 내용", "visual": "이미지묘사"}, {"content": "3안 내용", "visual": "이미지묘사"}]`;
-        if (p === 'shorts') return `반드시 JSON 키 이름은 정확히 "shorts" 사용 (YouTube Shorts 아님):\n"shorts": [{"content": "영상제목1", "duration": "60초", "storyboard": [{"timeCode": "0:00~0:05", "visual": "장면묘사", "script": "나레이션/자막"}, {"timeCode": "0:05~0:15", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:15~0:30", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:30~0:45", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:45~1:00", "visual": "장면묘사", "script": "나레이션/CTA"}]}, {"content": "영상제목2", "duration": "60초", "storyboard": [{"timeCode": "0:00~0:05", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:05~0:20", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:20~0:40", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:40~1:00", "visual": "장면묘사", "script": "나레이션/CTA"}]}, {"content": "영상제목3", "duration": "60초", "storyboard": [{"timeCode": "0:00~0:05", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:05~0:20", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:20~0:40", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:40~1:00", "visual": "장면묘사", "script": "나레이션/CTA"}]}]`;
+        if (p === 'shorts') return `반드시 JSON 키 이름은 정확히 "shorts" 사용:\n"shorts": [{"content": "영상제목1", "duration": "60초", "storyboard": [{"timeCode": "0:00~0:05", "visual": "장면묘사", "script": "나레이션/자막"}, {"timeCode": "0:05~0:15", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:15~0:30", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:30~0:45", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:45~1:00", "visual": "장면묘사", "script": "나레이션/CTA"}]}, {"content": "영상제목2", "duration": "60초", "storyboard": [{"timeCode": "0:00~0:05", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:05~0:20", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:20~0:40", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:40~1:00", "visual": "장면묘사", "script": "나레이션/CTA"}]}, {"content": "영상제목3", "duration": "60초", "storyboard": [{"timeCode": "0:00~0:05", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:05~0:20", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:20~0:40", "visual": "장면묘사", "script": "나레이션"}, {"timeCode": "0:40~1:00", "visual": "장면묘사", "script": "나레이션/CTA"}]}]`;
         if (p === 'blog') return `"blog": [{"content": "1안 블로그글(2200자내외). [섹션1]~[섹션5] 소제목포함. 각 소제목 아래 5~7문장. 소제목마다 해시태그 10개이상.", "visualPrompts": ["섹션1묘사","섹션2","섹션3","섹션4","섹션5"]}, {"content": "2안 블로그글", "visualPrompts": ["섹션1묘사","섹션2","섹션3","섹션4","섹션5"]}, {"content": "3안 블로그글", "visualPrompts": ["섹션1묘사","섹션2","섹션3","섹션4","섹션5"]}]`;
         return `"${p}": [{"content": "1안 내용"}, {"content": "2안 내용"}, {"content": "3안 내용"}]`;
       };
 
       const officePrompt = `당신은 최고의 마케팅 전문가이자 SNS 콘텐츠 1등 에이전트입니다.
+제시된 [확정된 기획서]의 방향성을 100% 반영하여 SNS 콘텐츠 1안/2안/3안을 생성하세요.
 
 ${ctxBody}
 
-[조건]
-위의 [실시간 트렌드 분석 & 이슈]에서 수집한 최신 트렌드를 이 상품과 최적의 연계로 SNS 콘텐츠 1안/2안/3안을 기획하세요.
-현재 결과물은 상품 핵심 정보가 포함된 "지금 사람들이 좋아하는 트렌드/이슈입니다."
-각 안을 서로 다른 트렌드/이슈를 적용하여 상품으로 연결지어 기획안을 작성해야 합니다.
-
-[콘텐츠 3개 안 생성 (각각 다른 트렌드/이슈 사용)]
-- 1안: 트렌드/이슈 #1을 적용하여 그 이슈가 원하는 상황을 공감시켜 상품의 솔루션으로 연결
-- 2안: 트렌드/이슈 #2를 적용하여 1안과 전혀 다른 각도와 예상외의 연결
-- 3안: 각종 이슈에서 공감성 있는 이슈를 적용하여 매력적·감성적 더 일상적인 접근
-3개 안이 겹치지 않을 것!
-
-[플랫폼 형식]
+[콘텐츠 생성 규칙]
+1. 각 안은 기획서의 컨셉을 바탕으로 하되, 서로 다른 접근 방식(공감, 정면돌파, 일상형 등)을 사용하세요.
+2. 각 안은 반드시 겹치지 않아야 합니다.
+3. 플랫폼 형식:
 ${platformGuides(selectedPlatform)}
 
-[research 필드 및 콘텐츠에 포함]
+[research 데이터]
 "research": {
-  "searchKeywords": ["검색 키워드"],
-  "trendAnalysis": "수집한 실시간 트렌드를 종합적으로 이 상품의 마케팅에 어떻게 활용할 것인지 설명. 각 안이 어떤 트렌드를 사용하는지 명시 (3~5문장)",
-  "competitorKeywords": ["경쟁사 상품 키워드"],
-  "targetAudience": "트렌드를 반영한 핵심 타겟층 설명"
+  "trendAnalysis": "수집한 트렌드가 이 콘텐츠에 어떻게 녹아들었는지 설명 (3문장)",
+  "targetAudience": "기획서에서 정의한 타겟층의 반응 예상"
 }
 
-[규칙]
-1. 반드시 플랫폼 키의 값은 JSON 배열([])로, 3개의 객체를 포함해야 합니다. 예: "instagram": [{...}, {...}, {...}]
-2. 콘텐츠는 1안/2안/3안 필수 생성. 3개 미만이면 실패입니다.
-3. 콘텐츠는 자연스럽고 생동감 넘치게 작성하세요.
-4. 결과물은 콘텐츠 JSON 형식으로만 답변하세요.`
+반드시 JSON으로만 답변하세요.`;
 
       const officeMessages: any[] = [
-        { role: 'system', content: 'You are an elite marketing analyst. Always respond in valid JSON format with a mandatory "research" field.' },
+        { role: 'system', content: 'You are an elite marketing analyst. Always respond in valid JSON format.' },
         { role: 'user', content: [{ type: 'text', text: officePrompt }, ...images.map(img => ({ type: 'image_url', image_url: { url: `data:${img.mimeType};base64,${img.base64}` } }))] }
       ];
 
@@ -491,7 +554,7 @@ ${platformGuides(selectedPlatform)}
         if (images.length > 0) {
           addLog('⚠️ 이미지 포함 요청 실패. 이미지 없이 재시도 중..');
           const officeMessagesWithoutImages = [
-            { role: 'system', content: 'You are an elite marketing analyst. Always respond in valid JSON format with a mandatory "research" field.' },
+            { role: 'system', content: 'You are an elite marketing analyst. Always respond in valid JSON format.' },
             { role: 'user', content: officePrompt }
           ];
           geminiResult = await callGPT(officeMessagesWithoutImages);
@@ -500,32 +563,23 @@ ${platformGuides(selectedPlatform)}
         }
       }
 
-      if (!geminiResult || typeof geminiResult !== 'object') {
-        throw new Error('GPT returned invalid response. Please try again.');
-      }
-
-      const platformKeyAlias: Record<string, string> = {
-        'youtube shorts': 'shorts', 'youtube_shorts': 'shorts', 'youtubeshorts': 'shorts',
-        'x (twitter)': 'twitter', 'x twitter': 'twitter', 'x_twitter': 'twitter',
-        'tik tok': 'tiktok', 'tik_tok': 'tiktok',
-      };
+      if (!geminiResult || typeof geminiResult !== 'object') throw new Error('GPT returned invalid response.');
 
       const normalized: any = {};
       Object.entries(geminiResult).forEach(([k, v]) => {
         const raw = k.toLowerCase().trim();
-        const key = platformKeyAlias[raw] || raw;
-        if (key === 'research') { normalized.research = v; localStorage.setItem('office_research', JSON.stringify(v)); }
-        else normalized[key] = (Array.isArray(v) ? v : [v]).map(normalizeVariant);
+        if (raw === 'research') { normalized.research = v; localStorage.setItem('office_research', JSON.stringify(v)); }
+        else normalized[raw] = (Array.isArray(v) ? v : [v]).map(normalizeVariant);
       });
 
-      // 선택한 플랫폼 데이터가 없으면 유사 키로 재탐색
       if (!normalized[selectedPlatform]) {
-        const fallbackKey = Object.keys(normalized).find(k => k !== 'research' && Array.isArray(normalized[k]) && normalized[k].length > 0);
+        const fallbackKey = Object.keys(normalized).find(k => k !== 'research' && Array.isArray(normalized[k]));
         if (fallbackKey) normalized[selectedPlatform] = normalized[fallbackKey];
       }
 
       setResults(normalized);
       setActiveTab(selectedPlatform);
+      setCanOpenResults(true);
       setView('results');
       addLog('✅ 콘텐츠 기획 완료!');
     } catch (err: any) { 
@@ -552,13 +606,6 @@ ${platformGuides(selectedPlatform)}
   const renderInput = () => (
     <div className="flex-1 overflow-y-auto p-6 bg-[#f8fafc]">
       <div className="max-w-5xl mx-auto py-8">
-        <header className="mb-10 text-center">
-          <h1 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tight leading-tight">
-            SNS <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-emerald-500">콘텐츠 기획</span> 에이전트
-          </h1>
-          <p className="text-gray-400 mt-4 text-lg font-medium">상품 정보 입력으로 완벽한 콘텐츠를 모든 채널에 기획하세요</p>
-        </header>
-
         <div className="bg-white rounded-[32px] p-8 md:p-10 shadow-2xl shadow-gray-200/50 border border-gray-100 animate-in fade-in zoom-in-95 duration-500">
           <div className="space-y-8">
             <div className="space-y-3">
@@ -614,30 +661,9 @@ ${platformGuides(selectedPlatform)}
               <textarea rows={6} placeholder="제품이 해결하는 문제, 핵심 기능, 타겟 고객층 등 입력하세요" className="w-full px-6 py-4 rounded-3xl border border-gray-100 bg-gray-50 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all font-medium outline-none" style={{ resize: 'both', minHeight: '180px' }} value={product.feature} onChange={e => setProduct({...product, feature: e.target.value})} />
             </div>
 
-            <div className="space-y-4">
-            <label className="block text-sm font-black text-gray-800 uppercase tracking-tighter">발행할 SNS 채널 선택</label>
-              <div className="flex flex-wrap gap-3">
-                {SNS_PLATFORMS.map((p) => {
-                  const selected = selectedPlatform === p.key;
-                  const Icon = PLATFORM_ICONS[p.key];
-                  return (
-                    <button
-                      key={p.key}
-                      onClick={() => setSelectedPlatform(p.key)}
-                      className={`min-w-[118px] px-4 py-3 rounded-2xl border transition-all duration-200 flex items-center gap-3 ${selected ? 'bg-gray-900 text-white border-gray-900 shadow-lg shadow-gray-200' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
-                    >
-                      <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${selected ? 'bg-white/15' : 'bg-gray-50'}`}>
-                        <Icon size={17} strokeWidth={2.1} />
-                      </span>
-                      <span className="text-sm font-semibold whitespace-nowrap">{p.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
 
-            <button disabled={loading} onClick={generateContent} className="w-full h-14 rounded-3xl bg-gray-900 text-white text-base md:text-lg font-bold shadow-xl shadow-gray-200 hover:bg-gray-800 hover:scale-[1.01] active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-3">
-              {loading ? <><Loader2 className="animate-spin" size={20} /> 기획안을 만드는 중...</> : <><Sparkles size={20} /> 콘텐츠 생성하기</>}
+            <button disabled={loading} onClick={analyzeTrend} className="w-full h-14 rounded-3xl bg-gray-900 text-white text-base md:text-lg font-bold shadow-xl shadow-gray-200 hover:bg-gray-800 hover:scale-[1.01] active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-3">
+              {loading ? <><Loader2 className="animate-spin" size={20} /> 트렌드를 분석하는 중...</> : <><Sparkles size={20} /> 트렌드 분석 및 기획 시작</>}
             </button>
             
             {logs.length > 0 && (
@@ -678,7 +704,13 @@ ${platformGuides(selectedPlatform)}
       <div className="flex-1 overflow-y-auto p-8 bg-white">
         <div className="max-w-5xl mx-auto py-8">
           <div className="flex items-center justify-between mb-10">
-            <div>
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => setView('planning')}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100 transition-all border border-gray-200"
+              >
+                <AlignLeft size={16} /> 기획서로 돌아가기
+              </button>
               <h2 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tight capitalize">{activeTab} 기획 결과</h2>
             </div>
             <div className="flex p-1.5 bg-gray-100 rounded-2xl gap-1">
@@ -697,35 +729,6 @@ ${platformGuides(selectedPlatform)}
             {!['blog', 'instagram', 'shorts'].includes(activeTab) && <div className="p-8 bg-gray-50 rounded-3xl"><pre className="whitespace-pre-wrap text-lg text-gray-600 leading-relaxed font-medium">{variant.content}</pre></div>}
           </div>
 
-          {allRefs.length > 0 && (
-            <div className="mt-8 bg-blue-50/30 border border-blue-100/50 rounded-3xl p-8">
-              <h3 className="text-blue-600 font-black text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
-                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                분석에 사용한 참고 자료
-              </h3>
-              <div className="space-y-3">
-                {allRefs.map((item: any, i: number) => item.url ? (
-                  <a key={i} href={item.url} target="_blank" rel="noopener noreferrer"
-                    className="bg-white rounded-2xl p-4 border border-blue-100/60 flex items-center gap-4 hover:border-blue-300 hover:shadow-sm transition-all group block">
-                    <div className="w-8 h-8 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0 text-blue-600 font-black text-sm group-hover:bg-blue-500 group-hover:text-white transition-colors">{i + 1}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-gray-900 text-sm mb-0.5 truncate group-hover:text-blue-600 transition-colors">{item.title}</div>
-                      <div className="text-blue-400 text-xs truncate">{item.url}</div>
-                    </div>
-                    <span className="text-blue-400 text-xs font-bold flex-shrink-0 group-hover:text-blue-600">열기</span>
-                  </a>
-                ) : (
-                  <div key={i} className="bg-white rounded-2xl p-4 border border-blue-100/60 flex items-center gap-4">
-                    <div className="w-8 h-8 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-400 font-black text-sm">{i + 1}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-gray-900 text-sm mb-0.5 truncate">{item.title}</div>
-                      {item.source && <div className="text-gray-400 text-xs truncate">{item.source}</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -741,7 +744,7 @@ ${platformGuides(selectedPlatform)}
           <header className="mb-12">
             <h2 className="text-4xl font-black text-gray-900 tracking-tight flex items-center gap-4">
               <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center">
-                <Search size={24} />
+                <BarChart3 size={24} />
               </div>
               기획의 종합 결과
             </h2>
@@ -756,18 +759,27 @@ ${platformGuides(selectedPlatform)}
               </h3>
               <div className="space-y-4">
                 {trendRaw.trending_issues.map((issue: any, i: number) => (
-                  <div key={i} className="bg-white rounded-2xl p-5 border border-orange-100/60">
-                    <div className="font-black text-gray-900 text-base mb-1">{issue.title}</div>
-                    <div className="text-gray-500 text-sm leading-relaxed">{issue.summary}</div>
-                    {issue.source && (
-                      issue.url ? (
-                        <a href={issue.url} target="_blank" rel="noopener noreferrer" className="text-orange-400 text-xs font-bold mt-2 flex items-center gap-1 hover:text-orange-600 hover:underline">
-                          🔗 출처: {issue.source}
-                        </a>
-                      ) : (
-                        <div className="text-orange-400 text-xs font-bold mt-2">출처: {issue.source}</div>
-                      )
-                    )}
+                  <div key={i} className="bg-white rounded-2xl p-5 border border-orange-100/60 flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="font-black text-gray-900 text-base mb-1">{issue.title}</div>
+                      <div className="text-gray-500 text-sm leading-relaxed">{issue.summary}</div>
+                      {issue.source && (
+                        issue.url ? (
+                          <a href={issue.url} target="_blank" rel="noopener noreferrer" className="text-orange-400 text-xs font-bold mt-2 flex items-center gap-1 hover:text-orange-600 hover:underline">
+                            🔗 출처: {issue.source}
+                          </a>
+                        ) : (
+                          <div className="text-orange-400 text-xs font-bold mt-2">출처: {issue.source}</div>
+                        )
+                      )}
+                    </div>
+                    <button 
+                      onClick={() => generatePlanningDoc(issue)}
+                      disabled={planningLoading}
+                      className="shrink-0 px-5 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-black hover:bg-gray-800 transition-all flex items-center gap-2 shadow-lg shadow-gray-200"
+                    >
+                      <PencilLine size={16} /> 이 이슈로 기획서 생성
+                    </button>
                   </div>
                 ))}
               </div>
@@ -778,19 +790,20 @@ ${platformGuides(selectedPlatform)}
             <div className="bg-emerald-50/30 border border-emerald-100/50 rounded-3xl p-8">
               <h3 className="text-emerald-600 font-black text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
                 <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                트렌드 분석
+                트렌드 분석 및 혼합 전략
               </h3>
-              <p className="text-gray-700 leading-relaxed text-sm md:text-[15px] whitespace-pre-wrap">{research?.trendAnalysis}</p>
+              <p className="text-gray-700 leading-relaxed text-sm md:text-[15px] whitespace-pre-wrap">{research?.trendAnalysis || (trendRaw?.keywords?.[0]?.reason)}</p>
             </div>
 
             <div className="bg-indigo-50/30 border border-indigo-100/50 rounded-3xl p-8">
               <h3 className="text-indigo-600 font-black text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
                 <span className="w-2 h-2 bg-indigo-500 rounded-full"></span>
-                주요 타겟
+                예상 타겟 반응
               </h3>
-              <p className="text-gray-700 leading-relaxed text-sm md:text-[15px] whitespace-pre-wrap">{research?.targetAudience}</p>
+              <p className="text-gray-700 leading-relaxed text-sm md:text-[15px] whitespace-pre-wrap">{research?.targetAudience || '수집된 트렌드 이슈에 반응할 최적의 타겟군을 분석 중입니다.'}</p>
             </div>
           </div>
+
 
           <div className="mt-8 space-y-8">
             {trendRaw?.hashtags?.length > 0 && (
@@ -803,24 +816,6 @@ ${platformGuides(selectedPlatform)}
                 </div>
               </div>
             )}
-
-            <div className="bg-gray-50 border border-gray-100 rounded-3xl p-8">
-              <h3 className="text-gray-500 font-black text-xs uppercase tracking-widest mb-6">검색 키워드</h3>
-              <div className="flex flex-wrap gap-2">
-                {research?.searchKeywords?.map((k: string, i: number) => (
-                  <span key={i} className="bg-white border-2 border-gray-100 px-4 py-2 rounded-2xl text-gray-700 font-black text-sm shadow-sm">#{k}</span>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-gray-50 border border-gray-100 rounded-3xl p-8">
-              <h3 className="text-gray-500 font-black text-xs uppercase tracking-widest mb-6">경쟁 키워드</h3>
-              <div className="flex flex-wrap gap-2">
-                {research?.competitorKeywords?.map((k: string, i: number) => (
-                  <span key={i} className="bg-white border-2 border-gray-100 px-4 py-2 rounded-2xl text-gray-400 font-bold text-sm">#{k}</span>
-                ))}
-              </div>
-            </div>
 
             {(() => {
               const issueUrlSet = new Set((trendRaw?.trending_issues || []).filter((t: any) => t.url).map((t: any) => t.url));
@@ -866,14 +861,173 @@ ${platformGuides(selectedPlatform)}
     );
   };
 
+  const renderPlanning = () => {
+    if (planningLoading) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center bg-[#f8fafc] gap-6">
+          <div className="w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center animate-bounce">
+            <PencilLine size={32} className="text-gray-900" />
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 size={24} className="animate-spin text-gray-400" />
+            <p className="text-gray-900 font-black text-xl tracking-tight">기획서를 작성하고 있습니다...</p>
+            <p className="text-gray-400 text-sm font-medium">트렌드와 상품을 분석해 최적의 전략을 도출 중입니다</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!planningDoc) return null;
+
+    return (
+      <div className="flex-1 overflow-y-auto p-8 bg-[#f8fafc]">
+        <div className="max-w-7xl mx-auto">
+          <header className="mb-10 flex items-end justify-between">
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <span className="px-3 py-1 bg-gray-900 text-white rounded-lg text-[10px] font-black uppercase tracking-wider">Step 3</span>
+                <span className="text-gray-400 text-sm font-bold">콘텐츠 설계 및 기획 단계</span>
+              </div>
+              <h2 className="text-4xl font-black text-gray-900 tracking-tight">AI 기획서 초안</h2>
+              <p className="text-gray-400 mt-2 font-medium">생성된 기획서 내용을 확인하고 필요에 따라 수정하세요.</p>
+            </div>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setPlanningEditMode(!planningEditMode)}
+                className={`px-5 py-2.5 rounded-xl text-sm font-black transition-all flex items-center gap-2 ${planningEditMode ? 'bg-emerald-500 text-white' : 'bg-white text-gray-900 border border-gray-200'}`}
+              >
+                {planningEditMode ? <><Check size={18} /> 수정 완료</> : <><PencilLine size={18} /> 기획서 수정하기</>}
+              </button>
+            </div>
+          </header>
+
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-8 items-start">
+            <div className="space-y-6">
+              {[
+                { key: 'concept', label: '핵심 컨셉', icon: <Sparkles size={18} /> },
+                { key: 'targetPersona', label: '타켓 페르소나', icon: <Search size={18} /> },
+                { key: 'tone', label: '톤앤매너', icon: <AlignLeft size={18} /> },
+                { key: 'coreMessage', label: '핵심 메시지', icon: <MessageCircleMore size={18} /> },
+                { key: 'platformStrategy', label: '플랫폼별 전략', icon: <Layout size={18} /> },
+                { key: 'cta', label: 'CTA (Call to Action)', icon: <LinkIcon size={18} /> }
+              ].map((section) => (
+                <div key={section.key} className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm transition-all hover:shadow-md">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-900">
+                      {section.icon}
+                    </div>
+                    <label className="text-sm font-black text-gray-900 uppercase tracking-wider">{section.label}</label>
+                  </div>
+                  {section.key === 'platformStrategy' ? (
+                    <div className="space-y-4">
+                      {SNS_PLATFORMS.map(p => (
+                        <div key={p.key} className="flex gap-4 items-start">
+                          <div className="w-24 shrink-0 pt-3 text-xs font-black text-gray-400 uppercase tracking-tighter">{p.label}</div>
+                          {planningEditMode ? (
+                            <textarea 
+                              className="flex-1 p-4 rounded-xl border border-gray-100 bg-gray-50 focus:bg-white focus:ring-4 focus:ring-indigo-100 outline-none transition-all text-[14px] leading-relaxed font-medium min-h-[80px]"
+                              value={planningDoc.platformStrategy[p.key] || ''}
+                              onChange={(e) => setPlanningDoc({ 
+                                ...planningDoc, 
+                                platformStrategy: { ...planningDoc.platformStrategy, [p.key]: e.target.value } 
+                              })}
+                            />
+                          ) : (
+                            <p className="flex-1 text-gray-700 leading-relaxed text-[14px] font-medium whitespace-pre-wrap py-2">{planningDoc.platformStrategy[p.key] || '전략 없음'}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : planningEditMode ? (
+                    <textarea 
+                      className="w-full p-4 rounded-xl border border-gray-100 bg-gray-50 focus:bg-white focus:ring-4 focus:ring-indigo-100 outline-none transition-all text-[15px] leading-relaxed font-medium min-h-[100px]"
+                      value={(planningDoc as any)[section.key]}
+                      onChange={(e) => setPlanningDoc({ ...planningDoc, [section.key]: e.target.value })}
+                    />
+                  ) : (
+                    <p className="text-gray-700 leading-relaxed text-[15px] font-medium whitespace-pre-wrap">{(planningDoc as any)[section.key]}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <aside className="space-y-6 sticky top-0">
+              <div className="bg-gray-900 rounded-[32px] p-8 text-white shadow-xl shadow-gray-200">
+                <h3 className="text-xs font-black uppercase tracking-widest text-white/50 mb-6">콘텐츠 생성 설정</h3>
+                
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-sm font-bold mb-4">발행 채널 확인</p>
+                    <div className="flex flex-col gap-2">
+                      {SNS_PLATFORMS.map((p) => {
+                        const selected = selectedPlatform === p.key;
+                        const Icon = PLATFORM_ICONS[p.key];
+                        return (
+                          <button
+                            key={p.key}
+                            onClick={() => setSelectedPlatform(p.key)}
+                            className={`p-3 rounded-xl border transition-all flex items-center gap-2 ${selected ? 'bg-white text-gray-900 border-white' : 'bg-white/5 text-white/40 border-white/10 hover:bg-white/10'}`}
+                          >
+                            <Icon size={14} />
+                            <span className="text-[11px] font-black">{p.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="pt-6 border-t border-white/10">
+                    <button 
+                      disabled={loading}
+                      onClick={generateContent}
+                      className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl font-black text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                    >
+                      {loading ? <><Loader2 className="animate-spin" size={18} /> 생성 중...</> : <><Sparkles size={18} /> 최종 콘텐츠 생성</>}
+                    </button>
+                    <button 
+                      onClick={() => generatePlanningDoc(selectedIssue)}
+                      className="w-full mt-3 py-4 bg-white/10 hover:bg-white/20 text-white/70 rounded-2xl font-bold text-sm transition-all"
+                    >
+                      기획안 재생성
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {selectedIssue && (
+                <div className="bg-white rounded-[32px] p-8 border border-gray-100 shadow-sm">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-4">선택한 트렌드 배경</h3>
+                  <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                    <p className="text-sm font-black text-gray-900 mb-2">{selectedIssue.title}</p>
+                    <p className="text-xs text-gray-500 leading-relaxed font-medium">{selectedIssue.summary}</p>
+                  </div>
+                </div>
+              )}
+            </aside>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="app-body flex h-screen w-screen bg-white overflow-hidden text-gray-900">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} view={view} setView={setView} visibleTabs={[selectedPlatform]} />
+      <Sidebar 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        view={view} 
+        setView={setView} 
+        canOpenResearch={canOpenResearch}
+        canOpenPlanning={canOpenPlanning}
+        canOpenResults={canOpenResults}
+        visibleTabs={[selectedPlatform]} 
+      />
       <main className="flex-1 flex flex-col relative overflow-hidden">
         {view === 'input' && renderInput()}
         {view === 'results' && renderResults()}
         {view === 'research' && renderResearch()}
+        {view === 'planning' && renderPlanning()}
       </main>
     </div>
   );
-}
+};
