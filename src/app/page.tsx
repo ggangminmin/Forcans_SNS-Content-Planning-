@@ -705,12 +705,6 @@ ${platformGuides(selectedPlatform)}
         <div className="max-w-5xl mx-auto py-8">
           <div className="flex items-center justify-between mb-10">
             <div className="flex items-center gap-4">
-              <button 
-                onClick={() => setView('planning')}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100 transition-all border border-gray-200"
-              >
-                <AlignLeft size={16} /> 기획서로 돌아가기
-              </button>
               <h2 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tight capitalize">{activeTab} 기획 결과</h2>
             </div>
             <div className="flex p-1.5 bg-gray-100 rounded-2xl gap-1">

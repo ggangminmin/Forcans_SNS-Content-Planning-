@@ -25,3 +25,4 @@ test_*.mjs
 
 # vercel
 .vercel
+.gstack/

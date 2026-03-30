@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"next dev\" \"npm run server\"",
+    "dev": "concurrently \"npm run dev:next\" \"npm run server\"",
+    "dev:next": "npx.cmd -y -p node@20 node ./node_modules/next/dist/bin/next dev",
     "server": "node server/index.cjs",
-    "build": "next build",
-    "start": "next start",
+    "build": "npx.cmd -y -p node@20 node ./node_modules/next/dist/bin/next build",
+    "start": "npx.cmd -y -p node@20 node ./node_modules/next/dist/bin/next start",
     "lint": "next lint"
   },
   "dependencies": {

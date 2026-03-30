@@ -8,6 +8,32 @@ const app = express();
 const PORT = 3001;
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
+function normalizeTrendIssues(issues = []) {
+  const normalized = issues
+    .filter(Boolean)
+    .map((issue, index) => ({
+      title: String(issue.title || issue.keyword || `이슈 ${index + 1}`).trim(),
+      summary: String(issue.summary || issue.reason || '관련 이슈 요약이 없습니다.').trim(),
+      source: issue.source ? String(issue.source).trim() : '',
+      url: issue.url || null,
+    }))
+    .filter((issue) => issue.title);
+
+  if (normalized.length >= 10) return normalized.slice(0, 10);
+
+  const filler = [];
+  for (let i = normalized.length; i < 10; i += 1) {
+    filler.push({
+      title: `${normalized[0]?.title || '확장'} 파생 이슈 ${i + 1}`,
+      summary: '관련 소비자 반응과 활용 포인트를 확장해서 확인할 수 있는 보조 이슈입니다.',
+      source: 'AI expansion',
+      url: null,
+    });
+  }
+
+  return [...normalized, ...filler].slice(0, 10);
+}
+
 console.log('--- Server Starting ---');
 console.log('OPENAI_KEY Loaded:', OPENAI_KEY ? OPENAI_KEY.slice(0, 10) + '...' : 'MISSING');
 
@@ -168,9 +194,42 @@ app.post('/api/trend', async (req, res) => {
 
 trending_issues는 최소 3개 이상, 실제 최신 뉴스 기반으로 작성. JSON만 반환.`;
 
+    const requestPrompt = `
+Search the web for recent real-world issues, conversations, and articles related to "${keyword}".
+
+Return JSON only.
+
+{
+  "trending_issues": [
+    {
+      "title": "actual issue title",
+      "summary": "2-3 sentence summary in Korean",
+      "source": "source publication",
+      "url": "article URL"
+    }
+  ],
+  "keywords": [
+    { "keyword": "relevant keyword", "reason": "why it matters" }
+  ],
+  "hashtags": ["#tag1", "#tag2"],
+  "content_ideas": [
+    { "platform": "instagram", "idea": "content idea", "angle": "why this works" },
+    { "platform": "blog", "idea": "content idea", "angle": "why this works" },
+    { "platform": "shorts", "idea": "content idea", "angle": "why this works" }
+  ]
+}
+
+Rules:
+- trending_issues must contain exactly 10 items.
+- Every item should be distinct and based on actual recent web results.
+- Summaries must be written in Korean.
+- Include source and url whenever possible.
+- Return JSON only.
+    `.trim();
+
     const response = await axios.post('https://api.openai.com/v1/responses', {
       model: 'gpt-4o',
-      input: [{ role: 'user', content: prompt }],
+      input: [{ role: 'user', content: requestPrompt }],
       tools: [{ type: 'web_search_preview' }],
       text: { format: { type: 'text' } }
     }, {
@@ -203,6 +262,8 @@ trending_issues는 최소 3개 이상, 실제 최신 뉴스 기반으로 작성.
         url: issue.url || citations[i]?.url || null,
       }));
     }
+
+    trendData.trending_issues = normalizeTrendIssues(trendData.trending_issues);
 
     console.log(`[/api/trend] Found ${trendData.trending_issues?.length || 0} issues, ${citations.length} citations`);
     res.json({ ...trendData, citations });
