@@ -132,10 +132,10 @@ async function tavilySearch(query: string, apiKey: string) {
     body: JSON.stringify({
       api_key: apiKey,
       query: `${query} 최신 SNS 트렌드 밈 소비자 반응 바이럴 이슈`,
-      search_depth: "advanced",
-      include_answer: true,
+      search_depth: "basic",
+      include_answer: false,
       include_raw_content: false,
-      max_results: 10,
+      max_results: 8,
     }),
   });
 
@@ -182,7 +182,7 @@ ${searchContext}
       Authorization: `Bearer ${openaiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o",
+      model: "gpt-4o-mini",
       response_format: { type: "json_object" },
       messages: [
         {
@@ -293,7 +293,7 @@ export async function POST(req: Request) {
             [
               `[${index + 1}] ${cleanText(result.title) || "제목 없음"}`,
               `URL: ${cleanText(result.url) || "없음"}`,
-              `내용: ${shortenText(result.content || result.raw_content, 500) || "요약 없음"}`,
+              `내용: ${shortenText(result.content || result.raw_content, 300) || "요약 없음"}`,
             ].join("\n"),
           )
           .join("\n\n")
