@@ -74,6 +74,26 @@ function normalizeIssue(raw: unknown, index: number): TrendIssue | null {
   };
 }
 
+function mergeIssueWithFallback(raw: unknown, fallbackIssue: TrendIssue | undefined, index: number): TrendIssue | null {
+  const issue = typeof raw === "object" && raw ? (raw as Record<string, unknown>) : {};
+  const url = cleanText(issue.url) || fallbackIssue?.url || null;
+  const title = cleanText(issue.title) || fallbackIssue?.title || `트렌드 이슈 ${index + 1}`;
+  const summary =
+    shortenText(issue.summary || issue.description || issue.content, 220) ||
+    fallbackIssue?.summary ||
+    "관련 요약을 아직 불러오지 못했습니다.";
+  const source = cleanText(issue.source) || fallbackIssue?.source || (url ? toHostnameLabel(url) : "");
+
+  if (!title) return null;
+
+  return {
+    title,
+    summary,
+    source,
+    url,
+  };
+}
+
 function buildFallbackIssues(results: TavilyResult[], keyword: string): TrendIssue[] {
   const seen = new Set<string>();
   const normalized = results
@@ -135,7 +155,7 @@ async function tavilySearch(query: string, apiKey: string) {
       search_depth: "basic",
       include_answer: false,
       include_raw_content: false,
-      max_results: 8,
+      max_results: 10,
     }),
   });
 
@@ -160,7 +180,7 @@ async function enrichWithOpenAI(params: {
 제공된 [검색 결과]는 실시간 뉴스, 세상의 이슈, 최신 SNS 밈 등을 포함하고 있습니다.
 
 당신의 임무는 두 가지입니다:
-1. **세상 이슈 발굴**: 제공된 [검색 결과]에서 현재 대한민국 대중이 가장 뜨겁게 반응하고 있는 '실시간 핫이슈', '정치/경제/사회/문화 뉴스', '최신 SNS 밈' 등을 최소 10개 이상 추출하세요. (사용자가 입력한 ${keyword}와 상관없는 순수 외부 이슈여야 합니다.)
+1. **세상 이슈 발굴**: 제공된 [검색 결과]에서 현재 대한민국 대중이 가장 뜨겁게 반응하는 '실시간 핫이슈', '정치/경제/사회/문화 뉴스', '최신 SNS 밈' 등을 딱 10개 추출하세요.
 2. **전략적 연결(Creative Connection)**: 발굴한 각각의 세상 이슈를 사용자의 상품/서비스(${keyword})와 창의적으로 연결하여, '왜 이 트렌드와 이 상품을 함께 이야기해야 하는지' 명분을 만드세요. 이슈 자체는 세상의 이야기지만, 그 끝은 자연스럽게 상품의 소구점으로 이어지는 '연결의 기술'을 보여주세요.
 
 [검색 결과]
@@ -168,8 +188,8 @@ ${searchContext}
 
 [반환 규칙]
 1. trending_issues: [검색 결과]의 뉴스/이슈를 바탕으로 요약한 리스트 (최소 10개 필수). 
-   - 반드시 각 이슈에 해당하는 원본 검색 결과의 **url**과 **source**를 객체에 포함하세요. (예: { "title": "...", "summary": "...", "url": "원본URL", "source": "출처명" })
-   - URL이 없는 이슈는 제외하거나, 검색 결과에 있는 가장 관련성 높은 URL을 찾아서 꼭 기입하세요.
+   - 반드시 각 이슈에 해당하는 원본 검색 결과의 **url**과 **source**를 객체에 포함하세요. (절대로 URL을 누락하지 마세요.)
+   - URL이 검색 결과에 없을 경우, 유사한 다른 이슈와 병합해서라도 반드시 실제 존재하는 URL을 기입해야 합니다.
 2. keywords: 현재 트렌드를 관통하는 '트렌드 키워드'와 그 이유.
 3. hashtags: 바이럴 가능성이 높은 태그.
 5. 마크다운 없이 순수 JSON object만 반환하세요.
@@ -216,12 +236,13 @@ function normalizeResponse(raw: Partial<TrendResponse> | null, fallback: TrendRe
     return fallback;
   }
 
-  const issues = Array.isArray(raw.trending_issues)
-    ? raw.trending_issues
-        .map((issue, index) => normalizeIssue(issue, index))
-        .filter((issue): issue is TrendIssue => Boolean(issue))
-        .slice(0, 10)
-    : [];
+  const rawIssues = Array.isArray(raw.trending_issues) ? raw.trending_issues : [];
+  const issues = Array.from(
+    { length: Math.max(rawIssues.length, fallback.trending_issues.length) },
+    (_, index) => mergeIssueWithFallback(rawIssues[index], fallback.trending_issues[index], index),
+  )
+    .filter((issue): issue is TrendIssue => Boolean(issue))
+    .slice(0, 10);
 
   const keywords = Array.isArray(raw.keywords)
     ? raw.keywords

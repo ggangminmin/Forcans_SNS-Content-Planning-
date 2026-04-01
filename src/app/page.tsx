@@ -41,6 +41,23 @@ interface ContentVariant  { content: string; images?: string[]; storyboard?: Sto
 interface ContentResults  { [key: string]: ContentVariant[]; }
 interface UploadedImage   { preview: string; base64: string; mimeType: string; }
 
+function isPlaceholderTrendIssue(issue: any) {
+  const title = String(issue?.title || '').trim();
+  const summary = String(issue?.summary || '').trim();
+  return /^트렌드 이슈\s*\d+$/i.test(title) || summary.includes('관련 요약을 아직 불러오지 못했습니다');
+}
+
+function readCachedTrendData() {
+  try {
+    const cached = JSON.parse(localStorage.getItem('office_trend_raw') || 'null');
+    if (!cached?.trending_issues?.length) return cached;
+    const placeholderCount = cached.trending_issues.filter((issue: any) => isPlaceholderTrendIssue(issue)).length;
+    return placeholderCount === cached.trending_issues.length ? null : cached;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeVariant(value: unknown): ContentVariant {
   if (typeof value === 'string') return { content: value };
   const r = value as any;
@@ -692,13 +709,7 @@ ${platformGuides(selectedPlatform)}
     const scenes = new Set(Object.keys(imgLoadingMap).filter(k=>k.startsWith(`${activeTab}-${vIdx}-scene-`)&&imgLoadingMap[k]).map(k=>parseInt(k.split('-').pop() || '0')));
     const instaL = !!imgLoadingMap[`${activeTab}-${vIdx}-instagram-0`];
 
-    const trendRaw = JSON.parse(localStorage.getItem('office_trend_raw') || 'null');
-    const issueUrlSet = new Set((trendRaw?.trending_issues || []).filter((t: any) => t.url).map((t: any) => t.url));
-    const extraCitations = (trendRaw?.citations || []).filter((c: any) => c.url && !issueUrlSet.has(c.url));
-    const allRefs = [
-      ...(trendRaw?.trending_issues || []).map((t: any) => ({ url: t.url || null, title: t.title, source: t.source || '' })),
-      ...extraCitations.map((c: any) => ({ url: c.url, title: c.title || c.url, source: '' })),
-    ];
+
 
     return (
       <div className="flex-1 overflow-y-auto p-8 bg-white">
@@ -730,7 +741,7 @@ ${platformGuides(selectedPlatform)}
 
   const renderResearch = () => {
     const research = results?.research || JSON.parse(localStorage.getItem('office_research') || 'null');
-    const trendRaw = JSON.parse(localStorage.getItem('office_trend_raw') || 'null');
+    const trendRaw = trendData || readCachedTrendData();
     if (!research && !trendRaw) return <div className="flex-1 flex items-center justify-center text-gray-400 font-bold bg-[#f8fafc]">분석 결과가 없습니다.</div>;
     return (
       <div className="flex-1 overflow-y-auto p-8 bg-white">
